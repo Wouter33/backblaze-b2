@@ -13,6 +13,8 @@ class File
     protected $bucketId;
     protected $action;
     protected $uploadTimestamp;
+    protected $uploadEndpoint;
+    protected $uploadAuthToken;
 
     /**
      * File constructor.
@@ -26,8 +28,10 @@ class File
      * @param $bucketId
      * @param $action
      * @param $uploadTimestamp
+     * @param $uploadEndpoint
+     * @param $uploadAuthToken
      */
-    public function __construct($id, $name, $hash = null, $size = null, $type = null, $info = null, $bucketId = null, $action = null, $uploadTimestamp = null)
+    public function __construct($id, $name, $hash = null, $size = null, $type = null, $info = null, $bucketId = null, $action = null, $uploadTimestamp = null, $uploadEndpoint = null, $uploadAuthToken = null)
     {
         $this->id = $id;
         $this->name = $name;
@@ -37,7 +41,8 @@ class File
         $this->info = $info;
         $this->bucketId = $bucketId;
         $this->action = $action;
-        $this->uploadTimestamp = $uploadTimestamp;
+        $this->uploadEndpoint = $uploadEndpoint;
+        $this->uploadAuthToken = $uploadAuthToken;
     }
 
     /**
@@ -110,5 +115,21 @@ class File
     public function getUploadTimestamp()
     {
         return $this->uploadTimestamp;
+    }
+
+    /**
+     * @return string
+     */
+    public function getUploadEndpoint()
+    {
+        return $this->uploadEndpoint;
+    }
+
+    /**
+     * @return string
+     */
+    public function getUploadAuthToken()
+    {
+        return $this->uploadAuthToken;
     }
 }

@@ -10,6 +10,8 @@ use BackblazeB2\Exceptions\BucketNotEmptyException;
 use BackblazeB2\Exceptions\FileNotPresentException;
 use BackblazeB2\Exceptions\NotFoundException;
 use BackblazeB2\Exceptions\UnauthorizedAccessException;
+use BackblazeB2\Exceptions\ExpiredAuthTokenException;
+use BackblazeB2\Exceptions\BadAuthTokenException;
 use GuzzleHttp\Psr7\Response;
 
 class ErrorHandler
@@ -22,6 +24,8 @@ class ErrorHandler
         'file_not_present'               => FileNotPresentException::class,
         'cannot_delete_non_empty_bucket' => BucketNotEmptyException::class,
         'unauthorized'                   => UnauthorizedAccessException::class,
+        'expired_auth_token'             => ExpiredAuthTokenException::class,
+        'bad_auth_token'                 => BadAuthTokenException::class
     ];
 
     public static function handleErrorResponse(Response $response)

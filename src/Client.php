@@ -35,18 +35,42 @@ class Client
         $this->accountId = $accountId;
         $this->applicationKey = $applicationKey;
 
-        $this->authTimeoutSeconds = 12 * 60 * 60; // 12 hour default
-        if (isset($options['auth_timeout_seconds'])) {
-            $this->authTimeoutSeconds = $options['auth_timeout_seconds'];
+        if(!empty($options['authorization'])){
+	        $this->authToken = $options['authorization']['authToken'];
+	        $this->apiUrl = $options['authorization']['apiUrl'];
+	        $this->downloadUrl = $options['authorization']['downloadUrl'];
+        } else {
+            $this->authorizeAccount();
+        }       
+
+        $clientOptions = [ 'http_errors' => false ];
+
+        if(isset($options['timeout'])){
+            $clientOptions['timeout'] = $options['timeout'];
         }
 
-        // set reauthorize time to force an authentication to take place
-        $this->reAuthTime = Carbon::now('UTC')->subSeconds($this->authTimeoutSeconds * 2);
-
-        $this->client = new HttpClient(['exceptions' => false]);
+        $this->client = new HttpClient($clientOptions);
+        
         if (isset($options['client'])) {
             $this->client = $options['client'];
         }
+        
+    }
+
+    /**
+     * Retrieve authorization details from connection
+     *
+     * @return array
+     */
+    public function getAuthorization()
+    {
+		
+		return [
+			'authToken' 	=> $this->authToken,
+			'apiUrl'		=> $this->apiUrl,
+			'downloadUrl'	=> $this->downloadUrl
+		];
+		
     }
 
     /**
@@ -165,13 +189,14 @@ class Client
         }
 
         // Retrieve the URL that we should be uploading to.
+        if (!isset($options['uploadEndpoint']) || !isset($options['uploadAuthToken'])){
+            $response = $this->sendAuthorizedRequest('POST', 'b2_get_upload_url', [
+                'bucketId' => $options['BucketId'],
+            ]);
 
-        $response = $this->sendAuthorizedRequest('POST', 'b2_get_upload_url', [
-            'bucketId' => $options['BucketId'],
-        ]);
-
-        $uploadEndpoint = $response['uploadUrl'];
-        $uploadAuthToken = $response['authorizationToken'];
+            $options['uploadEndpoint'] = $response['uploadUrl'];
+            $options['uploadAuthToken'] = $response['authorizationToken'];
+        }
 
         if (is_resource($options['Body'])) {
             // We need to calculate the file's hash incrementally from the stream.
@@ -198,9 +223,9 @@ class Client
             $options['FileContentType'] = 'b2/x-auto';
         }
 
-        $response = $this->client->request('POST', $uploadEndpoint, [
+        $response = $this->client->request('POST', $options['uploadEndpoint'], [
             'headers' => [
-                'Authorization'                      => $uploadAuthToken,
+                'Authorization'                      => $options['uploadAuthToken'],
                 'Content-Type'                       => $options['FileContentType'],
                 'Content-Length'                     => $size,
                 'X-Bz-File-Name'                     => $options['FileName'],
@@ -216,7 +241,9 @@ class Client
             $response['contentSha1'],
             $response['contentLength'],
             $response['contentType'],
-            $response['fileInfo']
+            $response['fileInfo'],
+            $options['uploadEndpoint'],
+            $options['uploadAuthToken']
         );
     }
 
@@ -247,8 +274,6 @@ class Client
 
             $requestUrl = sprintf('%s/file/%s/%s', $this->downloadUrl, $options['BucketName'], $options['FileName']);
         }
-
-        $this->authorizeAccount();
 
         $response = $this->client->request('GET', $requestUrl, $requestOptions, false);
 
@@ -283,8 +308,6 @@ class Client
             $nextFileName = $fileName;
             $maxFileCount = 1;
         }
-
-        $this->authorizeAccount();
 
         // B2 returns, at most, 1000 files per "page". Loop through the pages and compile an array of File objects.
         while (true) {
@@ -402,9 +425,6 @@ class Client
      */
     protected function authorizeAccount()
     {
-        if (Carbon::now('UTC')->timestamp < $this->reAuthTime->timestamp) {
-            return;
-        }
 
         $response = $this->client->request('GET', self::B2_API_BASE_URL.self::B2_API_V1.'/b2_authorize_account', [
             'auth' => [$this->accountId, $this->applicationKey],
@@ -413,8 +433,7 @@ class Client
         $this->authToken = $response['authorizationToken'];
         $this->apiUrl = $response['apiUrl'].self::B2_API_V1;
         $this->downloadUrl = $response['downloadUrl'];
-        $this->reAuthTime = Carbon::now('UTC');
-        $this->reAuthTime->addSeconds($this->authTimeoutSeconds);
+
     }
 
     /**
@@ -498,8 +517,6 @@ class Client
         if (!isset($options['FileContentType'])) {
             $options['FileContentType'] = 'b2/x-auto';
         }
-
-        $this->authorizeAccount();
 
         // 1) b2_start_large_file, (returns fileId)
         $start = $this->startLargeFile($options['FileName'], $options['FileContentType'], $options['BucketId']);
@@ -648,7 +665,6 @@ class Client
      */
     protected function sendAuthorizedRequest($method, $route, $json = [])
     {
-        $this->authorizeAccount();
 
         return $this->client->request($method, $this->apiUrl.$route, [
             'headers' => [
