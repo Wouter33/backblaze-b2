@@ -12,6 +12,7 @@ use BackblazeB2\Exceptions\NotFoundException;
 use BackblazeB2\Exceptions\UnauthorizedAccessException;
 use BackblazeB2\Exceptions\ExpiredAuthTokenException;
 use BackblazeB2\Exceptions\BadAuthTokenException;
+use BackblazeB2\Exceptions\ConnectException;
 use GuzzleHttp\Psr7\Response;
 
 class ErrorHandler

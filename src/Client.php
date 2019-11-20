@@ -4,6 +4,7 @@ namespace BackblazeB2;
 
 use BackblazeB2\Exceptions\NotFoundException;
 use BackblazeB2\Exceptions\ValidationException;
+use BackblazeB2\Exceptions\ConnectException;
 use BackblazeB2\Http\Client as HttpClient;
 use Carbon\Carbon;
 use GuzzleHttp\Exception\GuzzleException;
@@ -20,6 +21,8 @@ class Client
     protected $client;
     protected $reAuthTime;
     protected $authTimeoutSeconds;
+    protected $requestOptions = [];
+    protected $failSomeUploads;
 
     /**
      * Accepts the account ID, application key and an optional array of options.
@@ -35,6 +38,22 @@ class Client
         $this->accountId = $accountId;
         $this->applicationKey = $applicationKey;
 
+        $this->requestOptions['http_errors'] = false;
+
+        if(isset($options['timeout'])){
+            $this->requestOptions['timeout'] = $options['timeout'];
+        }
+
+        if(isset($options['fail_some_uploads'])){
+            $this->failSomeUploads = true;
+        }
+
+        $this->client = new HttpClient();
+        
+        if (isset($options['client'])) {
+            $this->client = $options['client'];
+        }
+
         if(!empty($options['authorization'])){
 	        $this->authToken = $options['authorization']['authToken'];
 	        $this->apiUrl = $options['authorization']['apiUrl'];
@@ -42,18 +61,6 @@ class Client
         } else {
             $this->authorizeAccount();
         }       
-
-        $clientOptions = [ 'http_errors' => false ];
-
-        if(isset($options['timeout'])){
-            $clientOptions['timeout'] = $options['timeout'];
-        }
-
-        $this->client = new HttpClient($clientOptions);
-        
-        if (isset($options['client'])) {
-            $this->client = $options['client'];
-        }
         
     }
 
@@ -190,12 +197,14 @@ class Client
 
         // Retrieve the URL that we should be uploading to.
         if (!isset($options['uploadEndpoint']) || !isset($options['uploadAuthToken'])){
+
             $response = $this->sendAuthorizedRequest('POST', 'b2_get_upload_url', [
                 'bucketId' => $options['BucketId'],
             ]);
 
             $options['uploadEndpoint'] = $response['uploadUrl'];
             $options['uploadAuthToken'] = $response['authorizationToken'];
+            
         }
 
         if (is_resource($options['Body'])) {
@@ -223,7 +232,7 @@ class Client
             $options['FileContentType'] = 'b2/x-auto';
         }
 
-        $response = $this->client->request('POST', $options['uploadEndpoint'], [
+        $input = [
             'headers' => [
                 'Authorization'                      => $options['uploadAuthToken'],
                 'Content-Type'                       => $options['FileContentType'],
@@ -233,7 +242,17 @@ class Client
                 'X-Bz-Info-src_last_modified_millis' => $options['FileLastModified'],
             ],
             'body' => $options['Body'],
-        ]);
+        ];
+
+        if($this->failSomeUploads){
+            $input['headers']['X-Bz-Test-Mode'] = 'fail_some_uploads';
+        }
+
+        if(isset($this->requestOptions['timeout'])){
+            $input['timeout'] = $this->requestOptions['timeout'];
+        }
+
+        $response = $this->client->request('POST', $options['uploadEndpoint'], $input);
 
         return new File(
             $response['fileId'],
@@ -242,6 +261,9 @@ class Client
             $response['contentLength'],
             $response['contentType'],
             $response['fileInfo'],
+            null,
+            null, 
+            null,
             $options['uploadEndpoint'],
             $options['uploadAuthToken']
         );
@@ -426,9 +448,13 @@ class Client
     protected function authorizeAccount()
     {
 
-        $response = $this->client->request('GET', self::B2_API_BASE_URL.self::B2_API_V1.'/b2_authorize_account', [
+        $options = [
             'auth' => [$this->accountId, $this->applicationKey],
-        ]);
+        ];
+
+        $options = array_merge($options, $this->requestOptions);
+
+        $response = $this->client->request('GET', self::B2_API_BASE_URL.self::B2_API_V1.'/b2_authorize_account', $options);
 
         $this->authToken = $response['authorizationToken'];
         $this->apiUrl = $response['apiUrl'].self::B2_API_V1;
@@ -666,11 +692,16 @@ class Client
     protected function sendAuthorizedRequest($method, $route, $json = [])
     {
 
-        return $this->client->request($method, $this->apiUrl.$route, [
+        $options = [
             'headers' => [
                 'Authorization' => $this->authToken,
             ],
             'json' => $json,
-        ]);
+        ];
+
+        $options = array_merge($options, $this->requestOptions);
+        
+        return $this->client->request($method, $this->apiUrl.$route, $options);
+
     }
 }
